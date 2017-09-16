@@ -1,0 +1,385 @@
+
+<!DOCTYPE html>
+<body>
+	<script src="nrand.js" type="text/javascript"></script>
+	<script>
+
+		// if you need to access wasm functions right away you must use this method;
+		Module['_main'] = function() {
+			drawNormals();
+		};
+
+		function uniformRand() {
+			return (Math.random()*8) -4;
+		}
+
+		// http://jsfiddle.net/ZCkFN/3/?utm_source=website&utm_medium=embed&utm_campaign=ZCkFN
+		var seed = Math.random();
+		function seededRandom() {
+			var max = 1, min = 0;
+			seed = (seed * 9301 + 49297) % 233280;
+			var rnd = seed / 233280;
+			return min + rnd * (max - min);
+		}
+
+		// mostly from http://blog.yjl.im/2010/09/simulating-normal-random-variable-using.html
+		function getNormRandRecursive(r, stdDev, mean) {
+			stdDev = stdDev || 1;
+			mean = mean || 0;
+
+			var return_v = false,
+				v_val = 0.0,
+				rand = r || Math.random;
+
+			return function nRand() {
+				if(return_v) {
+					return_v = false;
+					return v_val;
+				}
+
+				var u = 2*rand()-1,
+					v = 2*rand()-1,
+					r = u*u + v*v;
+
+				if (r === 0 || r > 1) {
+					return nRand();
+				}
+
+				var c = (Math.sqrt(-2*Math.log(r)/r)*stdDev)+mean;
+
+				v_val = v*c;
+				return_v = true;
+
+				return u*c;
+			}
+		}
+
+		function getNormRand(r, stdDev, mean) {
+			stdDev = stdDev || 1;
+			mean = mean || 0;
+
+			var rand = r || Math.random,
+				n2 = 0,
+				n2_cached = 0;
+
+			return function nRand() {
+				if (!n2_cached) {
+					var x, y, r, d;
+					do {
+						x = 2.0*rand() - 1;
+						y = 2.0*rand() - 1;
+						r = x*x + y*y;
+					} while (r === 0 || r > 1);
+
+					d = (Math.sqrt(-2*Math.log(r)/r)*stdDev)+mean;
+					n2 = y*d;
+					n2_cached = 1;
+					return x*d;
+
+				} else {
+					n2_cached = 0;
+					return n2;
+				}
+			};
+		}
+
+		function getNormRandWasm(seed, stdDev, mean) {
+			_setSeed(seed||Math.random());
+			stdDev = stdDev || 1;
+			mean = mean || 0;
+
+			return function nRand() {
+				return _nRand(mean, stdDev);
+			};
+		}
+
+
+
+
+		function Ziggurat() {
+
+			var jsr = 123456789;
+
+			var wn = new Array(128);
+			var fn = new Array(128);
+			var kn = new Array(128);
+
+			function RNOR(){
+				var hz = SHR3();
+				var iz = hz & 127;
+				return (Math.abs(hz) < kn[iz])
+						? hz * wn[iz]
+						: nfix(hz, iz);
+			}
+
+			this.nextGaussian = function(){
+				return RNOR();
+			};
+
+			this.init = function(seed) {
+				zigset(seed || new Date().getTime());
+			};
+
+			function nfix(hz, iz){
+				var r = 3.442619855899;
+				var r1 = 1.0 / r;
+				var x;
+				var y;
+				while(true){
+					x = hz * wn[iz];
+					if (iz === 0) {
+						x = (-Math.log(UNI()) * r1);
+						y = -Math.log(UNI());
+						while( y + y < x * x){
+							x = (-Math.log(UNI()) * r1);
+							y = -Math.log(UNI());
+						}
+						return ( hz > 0 ) ? r+x : -r-x;
+					}
+
+					if( fn[iz] + UNI() * (fn[iz-1] - fn[iz]) < Math.exp(-0.5 * x * x) ){
+						return x;
+					}
+					hz = SHR3();
+					iz = hz & 127;
+
+					if( Math.abs(hz) < kn[iz]){
+						return (hz * wn[iz]);
+					}
+				}
+			}
+
+			function SHR3(){
+				var jz = jsr;
+				var jzr = jsr;
+				jzr ^= (jzr << 13);
+				jzr ^= (jzr >>> 17);
+				jzr ^= (jzr << 5);
+				jsr = jzr;
+				return (jz+jzr) | 0;
+			}
+
+			function UNI(){
+				return 0.5 * (1 + SHR3() / -Math.pow(2,31));
+			}
+
+			function zigset(seed){
+				// seed generator based on current time
+				jsr ^= seed;
+
+				var m1 = 2147483648.0;
+				var dn = 3.442619855899;
+				var tn = dn;
+				var vn = 9.91256303526217e-3;
+
+				var q = vn / Math.exp(-0.5 * dn * dn);
+				kn[0] = Math.floor((dn/q)*m1);
+				kn[1] = 0;
+
+				wn[0] = q / m1;
+				wn[127] = dn / m1;
+
+				fn[0] = 1.0;
+				fn[127] = Math.exp(-0.5 * dn * dn);
+
+				for(var i = 126; i >= 1; i--){
+					dn = Math.sqrt(-2.0 * Math.log( vn / dn + Math.exp( -0.5 * dn * dn)));
+					kn[i+1] = Math.floor((dn/tn)*m1);
+					tn = dn;
+					fn[i] = Math.exp(-0.5 * dn * dn);
+					wn[i] = dn / m1;
+				}
+			}
+		}
+
+		function getNormRandZiggurat() {
+			var z = new Ziggurat();
+			z.init();
+
+			return function nRand() {
+				return z.nextGaussian();
+			}
+		}
+
+
+
+
+
+
+
+
+
+
+
+
+		function el(id) {return document.getElementById(id)}
+
+		function drawNormal(id, rnd, noOutline) {
+			var c = document.getElementById(id),
+				NORMALS = c.width * Number(el('Nnormals').value),
+				range = 4, // Drawing on [-4, 4]
+				d = new Array(c.width);
+
+			for (var i=0; i<d.length; i++) {
+				d[i] = 0;
+			}
+
+			var max = 0,
+				sum = 0,
+				sum2 = 0,
+				rnds = [],
+				nr, idx, w,
+				now = function() {return new Date().getTime()},
+				start = now();
+
+			for (var i=0; i<NORMALS; i++) {
+				rnds[i] = rnd();
+			}
+
+			el(id+"time").innerHTML =  now() - start;
+
+			for (var i=0; i<NORMALS; i++) {
+				nr = rnds[i];
+				sum += nr;
+				sum2 += nr * nr;
+				if (nr < -range || nr > range)
+					continue;
+				w = (c.width - 1) / 2;
+				idx = Math.floor(nr * w / range + 1 * w);
+				d[idx]++;
+				if (d[idx] > max) {
+					max = d[idx];
+				}
+			}
+
+			var mean = sum / NORMALS,
+				variance = sum2 / NORMALS - mean * mean;
+
+			ctx = c.getContext('2d');
+			ctx.strokeStyle = '#9cdeff';
+
+			ctx.clearRect(0, 0, c.width, c.height);
+
+			for (var i=0; i<d.length; i++) {
+				var y = c.height - (1.0 * d[i] / max * c.height);
+				ctx.beginPath();
+				ctx.moveTo(i, c.height);
+				ctx.lineTo(i, y);
+				ctx.closePath();
+				ctx.stroke();
+			}
+
+			if (!noOutline) {
+				// Draw normal curve
+				ctx.strokeStyle = '#de0b33';
+
+				for (var i = 0; i < c.width; i++) {
+					var x = i * 2.0 * 4 / (c.width - 1) - 4;
+					// mu = 0, var = 1
+					var fx = Math.exp(-(x * x) / 2) / Math.sqrt(2 * Math.PI);
+					// Normalized
+					fx *= Math.sqrt(2 * Math.PI);
+
+					var y = c.height - fx * c.height;
+					!i ? ctx.moveTo(i, y) : ctx.lineTo(i, y);
+				}
+
+				ctx.stroke();
+			}
+
+			ctx.font = '16pt monospace';
+			ctx.textAlign = 'left';
+			ctx.textBaseline = 'bottom';
+			ctx.fillText((-range).toString(), 0, c.height);
+			ctx.textAlign = 'right';
+			ctx.fillText(range.toString(), c.width, c.height);
+			ctx.textBaseline = 'top';
+			ctx.fillText('mean = ' + mean.toExponential(5), c.width, 0);
+			ctx.fillText('variance = ' + variance.toExponential(5), c.width, 20);
+
+			ctx.fillStyle = '#001bcc';
+			ctx.textAlign = 'left';
+			max = max * (c.width - 1) / 2 / range;
+			ctx.fillText((max / NORMALS)+"", 0, 0);
+			ctx.fillStyle = '#001bcc';
+			ctx.fillText((1 / Math.sqrt(2 * Math.PI).toExponential(5))+"", 0, 20);
+		}
+
+		function drawNormals() {
+			drawNormal('dist1', uniformRand, true);
+			drawNormal('dist2', getNormRand());
+			drawNormal('dist3', getNormRand(seededRandom));
+			drawNormal('dist4', getNormRandRecursive());
+			drawNormal('dist5', getNormRandRecursive(seededRandom));
+			drawNormal('dist6', getNormRandWasm());
+			drawNormal('dist7', getNormRandZiggurat());
+		}
+	</script>
+	<style>
+		body {
+			margin: 40px;
+		}
+		.plot {
+			float: left;
+		}
+		h2 {
+			font-size: 16px;
+			margin: 0;
+		}
+		.dist {
+			width: 500px;
+			height: 140px;
+			margin: 40px 40px 0 0;
+		}
+		.clear {
+			clear: both;
+		}
+	</style>
+
+	<p>
+		Performance comparison of various seeded,
+		normally-distributed random number generators based on the
+		<a href="https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform">Box-Muller transform</a>
+		and the <a href="https://en.wikipedia.org/wiki/Ziggurat_algorithm">Ziggurat algorithm</a>
+	</p>
+
+	<input type="text" size="5" value="1000" id="Nnormals"/>* 1000
+	<input type="button" value="Draw probability density of simulation" onclick="drawNormals()"/>
+	<br>
+
+	<div class="plot">
+		<canvas id="dist1" class="dist" width="1000" height="280"></canvas>
+		<h2>uniformRand (took: <span id="dist1time"></span>ms)</h2>
+	</div>
+	<br class="clear">
+	<div class="plot">
+		<canvas id="dist2" class="dist" width="1000" height="280"></canvas>
+		<h2>normalRandom (took: <span id="dist2time"></span>ms)</h2>
+	</div>
+
+	<div class="plot">
+		<canvas id="dist3" class="dist" width="1000" height="280"></canvas>
+		<h2>normalRandom seeded (took: <span id="dist3time"></span>ms)</h2>
+	</div>
+
+	<div class="plot">
+		<canvas id="dist4" class="dist" width="1000" height="280"></canvas>
+		<h2>normalRandomRecursive (took: <span id="dist4time"></span>ms)</h2>
+	</div>
+
+	<div class="plot">
+		<canvas id="dist5" class="dist" width="1000" height="280"></canvas>
+		<h2>normalRandomRecursive seeded (took: <span id="dist5time"></span>ms)</h2>
+	</div>
+
+	<div class="plot">
+		<canvas id="dist6" class="dist" width="1000" height="280"></canvas>
+		<h2>normalRandomWasm seeded (took: <span id="dist6time"></span>ms)</h2>
+	</div>
+
+	<div class="plot">
+		<canvas id="dist7" class="dist" width="1000" height="280"></canvas>
+		<h2>normalRandomZiggurat seeded (took: <span id="dist7time"></span>ms)</h2>
+	</div>
+</body>
+</html>
