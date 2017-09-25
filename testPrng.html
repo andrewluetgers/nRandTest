@@ -1,16 +1,39 @@
 
 <!DOCTYPE html>
 <body>
+	<script src="jstat.js" type="text/javascript"></script>
 	<script src="nrand.js" type="text/javascript"></script>
 	<script>
 
 		// if you need to access wasm functions right away you must use this method;
 		Module['_main'] = function() {
-			drawNormals();
+			_setSeed(Math.random());
+			_pmcSetSeed(Math.random());
+//			drawNormals();
 		};
 
 		function uniformRand() {
 			return (Math.random()*8) -4;
+		}
+
+		function seededUniformSRand() {
+			return (_sRand()*8) -4;
+		}
+
+		function seededUniformPMCRand() {
+			return (_pmcRand()*8) -4;
+		}
+
+		function seededUniformXORRand() {
+			return (xorRand()*8) -4;
+		}
+
+		function seededUniformRand() {
+			return (seededRandom()*8) -4;
+		}
+
+		function seededPMUniformRand() {
+			return (parkMiller()*8) -4;
 		}
 
 		// http://jsfiddle.net/ZCkFN/3/?utm_source=website&utm_medium=embed&utm_campaign=ZCkFN
@@ -21,6 +44,54 @@
 			var rnd = seed / 233280;
 			return min + rnd * (max - min);
 		}
+
+		//derived from https://gist.github.com/blixt/f17b47c62508be59987b
+		var pmSeed = 0,
+			max32BitInt = 2147483647;
+
+		function initPMSeed(seed) {
+			seed = (typeof seed === "number") ? seed : Math.floor(Math.random()*1e+15);
+			pmSeed = seed % max32BitInt;
+			if (pmSeed <= 0) pmSeed += max32BitInt;
+		}
+
+		function parkMiller() {
+			pmSeed = pmSeed * 16807 % max32BitInt;
+			return pmSeed / max32BitInt;
+		}
+
+		initPMSeed();
+
+
+
+		// https://en.wikipedia.org/wiki/Xorshift
+		function getXor(seed) {
+			seed = seed || +(new Date().getTime());
+			var w = 0;
+
+			// discard first 64 vals
+			for (var k = 64; k > 0; --k) {
+				xor();
+			}
+			// Set up generator function.
+			function xor() {
+				var t = seed ^ (seed << 11);
+				w ^= (w >> 19) ^ t ^ (t >> 8);
+				seed = w;
+				return seed / max32BitInt;
+			}
+
+			return xor;
+		}
+
+		var xorRand = getXor();
+
+
+
+
+
+
+
 
 		// mostly from http://blog.yjl.im/2010/09/simulating-normal-random-variable-using.html
 		function getNormRandRecursive(r, stdDev, mean) {
@@ -203,42 +274,94 @@
 
 
 
+		function getNormRandJStat(r, stdDev, mean) {
+			stdDev = stdDev || 1;
+			mean = mean || 0;
+
+			var rand = r || Math.random;
+
+			return function jStatNormRand() {
+				return jStat.normal.inv(rand(), mean, stdDev);
+			};
+		}
+
+		function getLognormalRandJStat(r, stdDev, mean) {
+			stdDev = stdDev || 1;
+			mean = mean || 0;
+
+			var rand = r || Math.random;
+
+			return function jStatNormRand() {
+				return jStat.lognormal.inv(rand(), mean, stdDev);
+			};
+		}
+
+
+		function getCauchyRandJStat(r, stdDev, mean) {
+			stdDev = stdDev || 1;
+			mean = mean || 0;
+
+			var rand = r || Math.random;
+
+			return function jStatNormRand() {
+				return jStat.cauchy.inv(rand(), mean, stdDev);
+			};
+		}
 
 
 
 
+		function lognormalY(x, height) {
+			var fx = jStat.lognormal.pdf(x, 0, 1);
+			fx *= 1.5;
+			return height - fx * height;
+		}
 
 
+		function cauchyY(x, height) {
+			var fx = jStat.cauchy.pdf(x, 0, 1);
+			fx *= Math.PI;
+			return height - fx * height;
+		}
 
 
+		function normalY(x, height) {
+			var fx = Math.exp(-(x * x) / 2) / Math.sqrt(2 * Math.PI);
+			fx *= Math.sqrt(2 * Math.PI);
+			return height - fx * height;
+		}
 
 		function el(id) {return document.getElementById(id)}
 
-		function drawNormal(id, rnd, noOutline) {
+		function drawNormal(id, rnd, yFn) {
 			var c = document.getElementById(id),
+				c2 = document.getElementById(id+"Pix"),
 				NORMALS = c.width * Number(el('Nnormals').value),
 				range = 4, // Drawing on [-4, 4]
-				d = new Array(c.width);
+				d = new Array(c.width),
+				max = -Infinity,
+				sum = 0,
+				sum2 = 0,
+				nr, idx, w, x, y, i,
+				rnds = [],
+				now = function() {return new Date().getTime()},
+				time, start;
 
-			for (var i=0; i<d.length; i++) {
+			for (i=0; i<d.length; i++) {
 				d[i] = 0;
 			}
 
-			var max = 0,
-				sum = 0,
-				sum2 = 0,
-				rnds = [],
-				nr, idx, w,
-				now = function() {return new Date().getTime()},
-				start = now();
+			start = now();
 
-			for (var i=0; i<NORMALS; i++) {
+			for (i=0; i<NORMALS; i++) {
 				rnds[i] = rnd();
 			}
 
-			el(id+"time").innerHTML =  now() - start;
+			time = now() - start;
 
-			for (var i=0; i<NORMALS; i++) {
+
+
+			for (i=0; i<NORMALS; i++) {
 				nr = rnds[i];
 				sum += nr;
 				sum2 += nr * nr;
@@ -247,21 +370,21 @@
 				w = (c.width - 1) / 2;
 				idx = Math.floor(nr * w / range + 1 * w);
 				d[idx]++;
-				if (d[idx] > max) {
-					max = d[idx];
-				}
+				max = Math.max(d[idx], max);
 			}
 
 			var mean = sum / NORMALS,
 				variance = sum2 / NORMALS - mean * mean;
 
-			ctx = c.getContext('2d');
+			var ctx = c.getContext('2d'),
+				ctx2 = c2.getContext('2d');
+
 			ctx.strokeStyle = '#9cdeff';
 
 			ctx.clearRect(0, 0, c.width, c.height);
 
-			for (var i=0; i<d.length; i++) {
-				var y = c.height - (1.0 * d[i] / max * c.height);
+			for (i=0; i<d.length; i++) {
+				y = c.height - (1.0 * d[i] / max * c.height);
 				ctx.beginPath();
 				ctx.moveTo(i, c.height);
 				ctx.lineTo(i, y);
@@ -269,18 +392,13 @@
 				ctx.stroke();
 			}
 
-			if (!noOutline) {
+			if (yFn) {
 				// Draw normal curve
 				ctx.strokeStyle = '#de0b33';
 
-				for (var i = 0; i < c.width; i++) {
-					var x = i * 2.0 * 4 / (c.width - 1) - 4;
-					// mu = 0, var = 1
-					var fx = Math.exp(-(x * x) / 2) / Math.sqrt(2 * Math.PI);
-					// Normalized
-					fx *= Math.sqrt(2 * Math.PI);
-
-					var y = c.height - fx * c.height;
+				for (i = 0; i < c.width; i++) {
+					x = i * 2.0 * 4 / (c.width - 1) - 4;
+					y = yFn(x, c.height);
 					!i ? ctx.moveTo(i, y) : ctx.lineTo(i, y);
 				}
 
@@ -301,18 +419,64 @@
 			ctx.textAlign = 'left';
 			max = max * (c.width - 1) / 2 / range;
 			ctx.fillText((max / NORMALS)+"", 0, 0);
-			ctx.fillStyle = '#001bcc';
-			ctx.fillText((1 / Math.sqrt(2 * Math.PI).toExponential(5))+"", 0, 20);
+
+			var imgdata = ctx2.createImageData(1000, 280),
+				imgdatalen = imgdata.data.length;
+
+			for(i=0;i<imgdatalen/4;i++){  //iterate over every pixel in the canvas
+				imgdata.data[4*i] =   rnd()*255;    // RED (0-255)
+				imgdata.data[4*i+1] = rnd()*255;    // GREEN (0-255)
+				imgdata.data[4*i+2] = rnd()*255;    // BLUE (0-255)
+				imgdata.data[4*i+3] = 255;  		// APLHA (0-255)
+			}
+			ctx2.putImageData(imgdata,0,0);
+
+			el(id+"time").innerHTML = time;
 		}
 
 		function drawNormals() {
-			drawNormal('dist1', uniformRand, true);
-			drawNormal('dist2', getNormRand());
-			drawNormal('dist3', getNormRand(seededRandom));
-			drawNormal('dist4', getNormRandRecursive());
-			drawNormal('dist5', getNormRandRecursive(seededRandom));
-			drawNormal('dist6', getNormRandWasm());
-			drawNormal('dist7', getNormRandZiggurat());
+			var fns = [
+				["Math.random uniform", uniformRand, null],
+				["random seeded uniform", seededUniformRand, null],
+
+				["pmc random seeded uniform", seededPMUniformRand, null],
+				["xor random seeded uniform", seededUniformXORRand, null],
+
+				["wasm sRand seeded uniform", seededUniformSRand, null],
+				["wasm pmc seeded uniform", seededUniformPMCRand, null],
+
+				["normal", getNormRand(), normalY],
+				["normal seeded", getNormRand(xorRand), normalY],
+
+				["normal recursive", getNormRandRecursive(), normalY],
+				["normal recursive seeded", getNormRandRecursive(xorRand), normalY],
+
+				["wasm normal", getNormRandWasm(), normalY],
+				["ziggurat seeded", getNormRandZiggurat(xorRand), normalY],
+
+				["jStat normal", getNormRandJStat(), normalY],
+				["jStat normal seeded", getNormRandJStat(xorRand), normalY],
+
+				["jStat cauchy", getCauchyRandJStat(), cauchyY],
+				["jStat cauchy seeded", getCauchyRandJStat(xorRand), cauchyY],
+
+				["jStat lognormal", getLognormalRandJStat(), lognormalY],
+				["jStat lognormal seeded", getLognormalRandJStat(xorRand), lognormalY]
+			],
+			container = el("plots"),
+			plot, html;
+
+			container.innerHTML = "";
+			fns.forEach(function(f, i) {
+				plot = document.createElement("div");
+				plot.setAttribute("class", "plot");
+				html = '<canvas id="dist'+i+'" class="dist" width="1000" height="280"></canvas>';
+				html += '<canvas id="dist'+i+'Pix" class="dist" width="500" height="140"></canvas>';
+				html += '<h2>'+f[0]+'<span><span id="dist'+i+'time"></span>ms</span></h2>';
+				plot.innerHTML = html;
+				container.appendChild(plot);
+				drawNormal('dist'+i, f[1], f[2]);
+			});
 		}
 	</script>
 	<style>
@@ -323,8 +487,13 @@
 			float: left;
 		}
 		h2 {
+			width: 500px;
 			font-size: 16px;
+			font-weight: 100;
 			margin: 0;
+		}
+		h2>span {
+			float: right;
 		}
 		.dist {
 			width: 500px;
@@ -347,39 +516,6 @@
 	<input type="button" value="Draw probability density of simulation" onclick="drawNormals()"/>
 	<br>
 
-	<div class="plot">
-		<canvas id="dist1" class="dist" width="1000" height="280"></canvas>
-		<h2>uniformRand (took: <span id="dist1time"></span>ms)</h2>
-	</div>
-	<br class="clear">
-	<div class="plot">
-		<canvas id="dist2" class="dist" width="1000" height="280"></canvas>
-		<h2>normalRandom (took: <span id="dist2time"></span>ms)</h2>
-	</div>
-
-	<div class="plot">
-		<canvas id="dist3" class="dist" width="1000" height="280"></canvas>
-		<h2>normalRandom seeded (took: <span id="dist3time"></span>ms)</h2>
-	</div>
-
-	<div class="plot">
-		<canvas id="dist4" class="dist" width="1000" height="280"></canvas>
-		<h2>normalRandomRecursive (took: <span id="dist4time"></span>ms)</h2>
-	</div>
-
-	<div class="plot">
-		<canvas id="dist5" class="dist" width="1000" height="280"></canvas>
-		<h2>normalRandomRecursive seeded (took: <span id="dist5time"></span>ms)</h2>
-	</div>
-
-	<div class="plot">
-		<canvas id="dist6" class="dist" width="1000" height="280"></canvas>
-		<h2>normalRandomWasm seeded (took: <span id="dist6time"></span>ms)</h2>
-	</div>
-
-	<div class="plot">
-		<canvas id="dist7" class="dist" width="1000" height="280"></canvas>
-		<h2>normalRandomZiggurat seeded (took: <span id="dist7time"></span>ms)</h2>
-	</div>
+	<div id="plots"></div>
 </body>
 </html>
