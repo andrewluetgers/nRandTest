@@ -166,7 +166,7 @@
 
 
 
-
+		// from https://www.filosophy.org/post/35/normaldistributed_random_values_in_javascript_using_the_ziggurat_algorithm/
 		function Ziggurat() {
 
 			var jsr = 123456789;
@@ -333,6 +333,7 @@
 
 		function el(id) {return document.getElementById(id)}
 
+		// from http://blog.yjl.im/2010/09/simulating-normal-random-variable-using.html
 		function drawNormal(id, rnd, yFn) {
 			var c = document.getElementById(id),
 				c2 = document.getElementById(id+"Pix"),
@@ -358,8 +359,6 @@
 			}
 
 			time = now() - start;
-
-
 
 			for (i=0; i<NORMALS; i++) {
 				nr = rnds[i];
