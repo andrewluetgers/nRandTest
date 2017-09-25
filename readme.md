@@ -9,4 +9,4 @@ See testPrng.html for all JS source code.
 # Usage
 run testPrng.html from a local server (Webassembly will not work from local file system). You should see something like this...
 
-<img width="1068" src="https://user-images.githubusercontent.com/232036/30794227-9ac1cc9c-a18c-11e7-8c4e-8ddcdd972850.png">
+<img width="1068" src="https://user-images.githubusercontent.com/232036/30818098-3db03fb2-a1e0-11e7-94db-a0173ca33fb7.png">
