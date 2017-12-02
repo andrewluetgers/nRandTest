@@ -66,19 +66,20 @@
 
 		// https://en.wikipedia.org/wiki/Xorshift
 		function getXor(seed) {
-			seed = seed || +(new Date().getTime());
-			var w = 0;
+			seed = seed || new Date().getTime();
+			let w = 0;
 
-			// discard first 64 vals
-			for (var k = 64; k > 0; --k) {
-				xor();
-			}
 			// Set up generator function.
 			function xor() {
-				var t = seed ^ (seed << 11);
+				let t = seed ^ (seed << 11);
 				w ^= (w >> 19) ^ t ^ (t >> 8);
 				seed = w;
 				return seed / max32BitInt;
+			}
+
+			// discard first 64 vals
+			for (let k = 64; k > 0; --k) {
+				xor();
 			}
 
 			return xor;
@@ -171,24 +172,18 @@
 
 			var jsr = 123456789;
 
-			var wn = new Array(128);
-			var fn = new Array(128);
-			var kn = new Array(128);
+			var wn = Array(128);
+			var fn = Array(128);
+			var kn = Array(128);
 
 			function RNOR(){
 				var hz = SHR3();
 				var iz = hz & 127;
-				return (Math.abs(hz) < kn[iz])
-						? hz * wn[iz]
-						: nfix(hz, iz);
+				return (Math.abs(hz) < kn[iz]) ? hz * wn[iz] : nfix(hz, iz);
 			}
 
 			this.nextGaussian = function(){
 				return RNOR();
-			};
-
-			this.init = function(seed) {
-				zigset(seed || new Date().getTime());
 			};
 
 			function nfix(hz, iz){
@@ -198,7 +193,7 @@
 				var y;
 				while(true){
 					x = hz * wn[iz];
-					if (iz === 0) {
+					if( iz == 0 ){
 						x = (-Math.log(UNI()) * r1);
 						y = -Math.log(UNI());
 						while( y + y < x * x){
@@ -234,9 +229,9 @@
 				return 0.5 * (1 + SHR3() / -Math.pow(2,31));
 			}
 
-			function zigset(seed){
+			function zigset(){
 				// seed generator based on current time
-				jsr ^= seed;
+				jsr ^= new Date().getTime();
 
 				var m1 = 2147483648.0;
 				var dn = 3.442619855899;
@@ -261,15 +256,128 @@
 					wn[i] = dn / m1;
 				}
 			}
+
+			zigset();
+		}
+
+
+		// from https://www.filosophy.org/post/35/normaldistributed_random_values_in_javascript_using_the_ziggurat_algorithm/
+		function ZigguratOptimized() {
+
+			let jsr = 123456789,
+				wn = new Array(128),
+				fn = new Array(128),
+				kn = new Array(128),
+				r = 3.442619855899,
+				r1 = 1.0 / r,
+				x, y, fiz,
+				log = Math.log,
+				abs = Math.abs,
+				pow = Math.pow,
+				exp = Math.exp;
+
+			function rnor(){
+				let jz = jsr;
+				let jzr = jsr;
+				jzr ^= (jzr << 13);
+				jzr ^= (jzr >>> 17);
+				jzr ^= (jzr << 5);
+				jsr = jzr;
+				let hz = (jz+jzr) | 0;
+				let iz = hz & 127;
+				return (abs(hz) < kn[iz]) ? hz * wn[iz] : nfix(hz, iz);
+			}
+
+			this.nextGaussian = rnor;
+
+			this.init = function(seed) {
+				zigset(seed || new Date().getTime());
+			};
+
+			function nfix(hz, iz) {
+				while (true) {
+					x = hz * wn[iz];
+					if (iz === 0) {
+						x = -log(uni()) * r1;
+						y = -log(uni());
+						fiz = fn[iz];
+
+						while (y + y < x * x) {
+							x = (-log(uni()) * r1);
+							y = -log(uni());
+						}
+						return (hz > 0) ? r+x : -r-x;
+					}
+
+					if (fiz + uni() * (fn[iz-1] - fiz) < exp(-0.5 * x * x) ) {
+						return x;
+					}
+
+					let jz = jsr;
+					let jzr = jsr;
+					jzr ^= (jzr << 13);
+					jzr ^= (jzr >>> 17);
+					jzr ^= (jzr << 5);
+					jsr = jzr;
+					hz = (jz+jzr) | 0;
+					iz = hz & 127;
+
+					if (abs(hz) < kn[iz]){
+						return (hz * wn[iz]);
+					}
+				}
+			}
+
+			function uni(){
+				let jz = jsr,
+					jzr = jsr;
+
+				jzr ^= (jzr << 13);
+				jzr ^= (jzr >>> 17);
+				jzr ^= (jzr << 5);
+				jsr = jzr;
+				return 0.5 * (1 + ((jz+jzr) | 0) / -pow(2, 31));
+			}
+
+			function zigset(seed) {
+				// seed generator based on current time
+				jsr ^= seed;
+
+				let m1 = 2147483648.0,
+					dn = 3.442619855899,
+					tn = dn,
+					vn = 9.91256303526217e-3,
+					q = vn / Math.exp(-0.5 * dn * dn);
+
+				kn[0] = Math.floor((dn/q)*m1);
+				kn[1] = 0;
+
+				wn[0] = q / m1;
+				wn[127] = dn / m1;
+
+				fn[0] = 1.0;
+				fn[127] = Math.exp(-0.5 * dn * dn);
+
+				for(let i = 126; i >= 1; i--) {
+					dn = Math.sqrt(-2.0 * Math.log( vn / dn + Math.exp( -0.5 * dn * dn)));
+					kn[i+1] = Math.floor((dn/tn)*m1);
+					tn = dn;
+					fn[i] = Math.exp(-0.5 * dn * dn);
+					wn[i] = dn / m1;
+				}
+			}
+		}
+
+		function getNormRandZigguratOptimized() {
+			let z = new ZigguratOptimized();
+			z.init();
+
+			return z.nextGaussian;
 		}
 
 		function getNormRandZiggurat() {
-			var z = new Ziggurat();
-			z.init();
-
-			return function nRand() {
-				return z.nextGaussian();
-			}
+			let z = new Ziggurat();
+			return z.nextGaussian;
 		}
 
 
@@ -282,6 +390,16 @@
 
 			return function jStatNormRand() {
 				return jStat.normal.inv(rand(), mean, stdDev);
+			};
+		}
+
+		function getStudenttRandJStat(r, dof) {
+			dof = dof || 1;
+
+			var rand = r || Math.random;
+
+			return function jStatNormRand() {
+				return jStat.studentt.inv(rand(), dof);
 			};
 		}
 
@@ -317,6 +435,12 @@
 			return height - fx * height;
 		}
 
+		function studenttY(x, height) {
+			var fx = jStat.studentt.pdf(x, 1);
+			fx *= Math.PI;
+			return height - fx * height;
+		}
+
 
 		function cauchyY(x, height) {
 			var fx = jStat.cauchy.pdf(x, 0, 1);
@@ -334,7 +458,7 @@
 		function el(id) {return document.getElementById(id)}
 
 		// from http://blog.yjl.im/2010/09/simulating-normal-random-variable-using.html
-		function drawNormal(id, rnd, yFn) {
+		function drawDist(id, rnd, yFn) {
 			var c = document.getElementById(id),
 				c2 = document.getElementById(id+"Pix"),
 				NORMALS = c.width * Number(el('Nnormals').value),
@@ -433,34 +557,41 @@
 			el(id+"time").innerHTML = time;
 		}
 
+
 		function drawNormals() {
+
 			var fns = [
 				["Math.random uniform", uniformRand, null],
 				["random seeded uniform", seededUniformRand, null],
-
-				["pmc random seeded uniform", seededPMUniformRand, null],
+//
+//				["pmc random seeded uniform", seededPMUniformRand, null],
 				["xor random seeded uniform", seededUniformXORRand, null],
-
-				["wasm sRand seeded uniform", seededUniformSRand, null],
+//
+//				["wasm sRand seeded uniform", seededUniformSRand, null],
 				["wasm pmc seeded uniform", seededUniformPMCRand, null],
-
-				["normal", getNormRand(), normalY],
+//
+//				["normal", getNormRand(), normalY],
 				["normal seeded", getNormRand(xorRand), normalY],
-
-				["normal recursive", getNormRandRecursive(), normalY],
+//
+//				["normal recursive", getNormRandRecursive(), normalY],
 				["normal recursive seeded", getNormRandRecursive(xorRand), normalY],
 
-				["wasm normal", getNormRandWasm(), normalY],
-				["ziggurat seeded", getNormRandZiggurat(xorRand), normalY],
+//				["wasm normal", getNormRandWasm(), normalY],
+				["optimized ziggurat seeded", getNormRandZigguratOptimized(), normalY],
 
-				["jStat normal", getNormRandJStat(), normalY],
+				["ziggurat seeded", getNormRandZiggurat(), normalY],
+
+//				["jStat normal", getNormRandJStat(), normalY],
 				["jStat normal seeded", getNormRandJStat(xorRand), normalY],
-
-				["jStat cauchy", getCauchyRandJStat(), cauchyY],
+//
+//				["jStat cauchy", getCauchyRandJStat(), cauchyY],
 				["jStat cauchy seeded", getCauchyRandJStat(xorRand), cauchyY],
-
-				["jStat lognormal", getLognormalRandJStat(), lognormalY],
-				["jStat lognormal seeded", getLognormalRandJStat(xorRand), lognormalY]
+//
+//				["jStat lognormal", getLognormalRandJStat(), lognormalY],
+				["jStat lognormal seeded", getLognormalRandJStat(xorRand), lognormalY],
+//
+//				["jStat studentt", getStudenttRandJStat(), studenttY],
+				["jStat studentt seeded", getStudenttRandJStat(xorRand), studenttY]
 			],
 			container = el("plots"),
 			plot, html;
@@ -474,7 +605,7 @@
 				html += '<h2>'+f[0]+'<span><span id="dist'+i+'time"></span>ms</span></h2>';
 				plot.innerHTML = html;
 				container.appendChild(plot);
-				drawNormal('dist'+i, f[1], f[2]);
+				drawDist('dist'+i, f[1], f[2]);
 			});
 		}
 	</script>
